@@ -183,7 +183,7 @@ class NeuralNetwork:
 #----------------------------------------------------------------------------------------------
 
 # Caricamento e preparazione dati
-inputs, targets = load_data('cupTrain.csv')
+inputs, targets = load_data('../cupTrain.csv')
 
 # Divisione in training, validation e test set
 X_train, y_train, X_val, y_val, X_test, y_test = split_data(inputs, targets)
