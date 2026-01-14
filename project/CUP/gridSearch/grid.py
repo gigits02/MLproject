@@ -230,7 +230,7 @@ class NeuralNetwork:
 #----------------------------------------------------------------------------------------------
 
 # Caricamento e preparazione dati
-inputs, targets = load_data('../ML-CUP25-TR.csv')
+inputs, targets = load_data('../CUP_datasets/ML-CUP25-TR.csv')
 
 # Divisione in training e test set
 X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, test_ratio=0.2)
