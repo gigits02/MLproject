@@ -69,7 +69,7 @@ class NeuralNetwork:
         return correct / len(dataset) * 100
 
 # Caricare i dati dal file CSV
-filename = "m1training.csv"
+filename = "./encoded_MonkFiles/m3training.csv"
 df = pd.read_csv(filename, header=None)
 
 # Separare input e target
@@ -84,7 +84,7 @@ train_data = [(train_inputs[i], train_targets[i]) for i in range(len(train_input
 val_data = [(val_inputs[i], val_targets[i]) for i in range(len(val_inputs))]
 
 # Iperparametri
-epochs = 1000
+epochs = 800
 hidden_size = 3
 learning_rate = 0.5
 
@@ -93,6 +93,7 @@ nn = NeuralNetwork(input_size=17, hidden_size=hidden_size, output_size=1, learni
 
 # Addestramento con SGD (online learning)
 errors = []
+accs = []
 for epoch in tqdm(range(epochs), desc="Training Progress", unit="epoch"):
     np.random.shuffle(train_data)  # Mescoliamo i dati ad ogni epoca
     for data in train_data:
@@ -108,6 +109,8 @@ for epoch in tqdm(range(epochs), desc="Training Progress", unit="epoch"):
 
     # Validazione
     val_accuracy = nn.accuracy(val_data)
+    accs.append(val_accuracy)
+
     if epoch % 100 == 0:  # Ogni 100 epoche, stampa la validazione
         print(f"Epoch {epoch}, Validation Accuracy: {val_accuracy:.2f}%")
 
@@ -122,7 +125,7 @@ print(f"Accuratezza sulla Validation Set: {val_accuracy:.2f}%")
 
 #TEST DELLA RETE
 # Caricare i dati di testing dal file CSV
-filename2 = "m1test.csv"
+filename2 = "./encoded_MonkFiles/m3test.csv"
 df2 = pd.read_csv(filename2, header=None)
 
 # Separare input e target per il test dataset
@@ -136,9 +139,14 @@ test_accuracy = nn.accuracy(test_data)
 
 print(f"Accuratezza sul Test Set: {test_accuracy:.2f}%")
 
-# Visualizzazione dell'errore durante l'allenamento
+# Visualizzazione dell'errore e della val_accuracy durante l'allenamento
 plt.plot(errors)
 plt.title('Errore Medio durante l\'Allenamento')
 plt.xlabel('Epoca')
 plt.ylabel('Errore Medio')
+plt.show()
+plt.plot(accs)
+plt.title('Validation accuracy durante l\'allenamento')
+plt.xlabel('Epoca')
+plt.ylabel('Accuracy')
 plt.show()
