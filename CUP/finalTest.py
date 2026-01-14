@@ -17,25 +17,16 @@ def tanh(x):
 def tanh_derivative(x):
     return 1 - np.tanh(x)**2
 
-def normalize_data(X):
-    min_value = X.min(axis=0)
-    max_value = X.max(axis=0)
-    X_norm = (X - min_value) / (max_value - min_value + 10**(-8))  # Evitare divisioni per zero
-    return X_norm, min_value, max_value
-
-def denormalize_data(X_norm, X_min, X_max):
-    return X_norm * (X_max - X_min) + X_min
-
 def load_data(filename):
     data = pd.read_csv(filename, header=None)
     inputs = data.iloc[:, 1:13].values  # 12 colonne centrali come input
     targets = data.iloc[:, 13:].values  # Ultime 4 colonne come target
     return inputs, targets
 
-# Divisione in training+CV e test set
-def train_test_split(X, y, test_ratio=0.2):
+# Divisione in training e validation set
+def train_val_split(X, y, ratio):
     indices = np.random.permutation(len(X))
-    test_size = int(len(X) * test_ratio)
+    test_size = int(len(X) * ratio)
 
     test_idx = indices[:test_size]
     train_idx = indices[test_size:]
@@ -73,17 +64,6 @@ def plot_error_per_component(y_true, y_pred, title="Error per output"):
     plt.title(title)
     plt.grid(True)
     plt.show()
-
-
-def k_fold_split(X, y, k):
-    indices = np.random.permutation(len(X))
-    folds = np.array_split(indices, k)
-
-    for i in range(k):
-        val_idx = folds[i]
-        train_idx = np.hstack([folds[j] for j in range(k) if j != i])
-
-        yield X[train_idx], y[train_idx], X[val_idx], y[val_idx]
 
 
 class NeuralNetwork:
@@ -222,11 +202,11 @@ class NeuralNetwork:
 
     def plot_losses(self, train_losses, val_losses):
         plt.plot(train_losses, label='Train Loss')
-        plt.plot(val_losses, label='Test Loss')
+        plt.plot(val_losses, label='Val Loss')
         plt.xlabel('Epochs')
         plt.ylabel('MSE Loss')
         plt.legend()
-        plt.title('Loss over Epochs')
+        plt.title('Losses over Epochs')
         plt.show()
 #----------------------------------------------------------------------------------------------
 
@@ -234,29 +214,28 @@ class NeuralNetwork:
 inputs, targets = load_data('./CUP_datasets/ML-CUP25-TR.csv')
 
 # Divisione in training e test set
-X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, test_ratio=0.2)
+X_train_full, y_train_full, X_val, y_val = train_val_split(inputs, targets, ratio=0.2)
 
 # Parametri di allenamento
-epochs = 1000
+epochs = 5000
 batch_size = 30
 
 # Parametri della rete
-hidden_sizes = [50, 50] 
-eta0 = 0.0005
-l2_lambda = 0.00001
-alpha = 0.9
+hidden_sizes = [30, 30] 
+eta0 = 0.00001
+l2_lambda = 0.000008
+alpha = 0.99
 
 # Standardizzazione su TUTTO il training
 X_mean, X_std = X_train_full.mean(axis=0), X_train_full.std(axis=0)
 y_mean, y_std = y_train_full.mean(axis=0), y_train_full.std(axis=0)
 X_train_std = (X_train_full - X_mean) / X_std
-X_test_std = (X_test - X_mean) / X_std
+X_val_std = (X_val - X_mean) / X_std
 y_train_std = (y_train_full - y_mean) / y_std
-y_test_std = (y_test - y_mean) / y_std
+y_val_std = (y_val - y_mean) / y_std
 
-nn = NeuralNetwork(input_size=X_train_std.shape[1],hidden_sizes=hidden_sizes,output_size=y_train_std.shape[1],eta0=eta0,l2_lambda=l2_lambda,alpha=alpha
-    )
-nn.train(X_train_std, y_train_std, X_test_std, y_test_std, epochs, batch_size)
+nn = NeuralNetwork(input_size=X_train_std.shape[1],hidden_sizes=hidden_sizes,output_size=y_train_std.shape[1],eta0=eta0,l2_lambda=l2_lambda,alpha=alpha)
+nn.train(X_train_std, y_train_std, X_val_std, y_val_std, epochs, batch_size)
 
 #Predictions on TR-set
 y_pred_tr = nn.predict(X_train_std)
@@ -266,5 +245,51 @@ print("Original scale Loss (entire tr-set):", real_tr_loss)
 plot_component_comparison(y_train_full, y_pred_tr_dest, title_prefix="TRAIN")
 plot_error_per_component(y_train_full, y_pred_tr_dest, title="TRAIN Error Distribution")
 
+#-------------------------------------
 #Predictions on TEST-set
-y_pred_test = nn.predict(X_test_std) * y_std + y_mean
+
+X_ts = pd.read_csv('./CUP_datasets/ML-CUP25-TS.csv', header=None).iloc[:, 1:].values  # 12 colonne centrali come input
+
+# Standardizzazione sui parametri di training
+X_ts_std = (X_ts - X_mean) / X_std
+y_pred_ts = nn.predict(X_ts_std)
+y_pred_ts_dest = y_pred_ts * y_std + y_mean
+
+# Indici 1-based
+indices = np.arange(1, y_pred_ts_dest.shape[0]+1).reshape(-1,1)                                                                                                 
+output = np.hstack([indices, y_pred_ts_dest])
+#np.savetxt("output_test.csv", output, delimiter=",", fmt="%d,%0.16f,%0.16f,%0.16f,%0.16f")
+
+#------------------------------------------------------------------------------------------
+#Visualizza dati test
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharey=False)
+axes = axes.flatten()
+
+for t in range(4):
+    ax = axes[t]
+
+    ax.scatter(
+        np.arange(len(y_pred_tr_dest)),
+        y_pred_tr_dest[:, t],
+        alpha=0.4,
+        label="Train",
+        s=15
+    )
+
+    ax.scatter(
+        np.arange(len(y_pred_ts_dest)),
+        y_pred_ts_dest[:, t],
+        alpha=0.4,
+        label="Test",
+        s=15
+    )
+
+    ax.set_title(f"Target {t}")
+    ax.set_xlabel("Indice campione")
+    ax.set_ylabel("Predizione")
+
+    ax.legend()
+
+plt.tight_layout()
+plt.show()
