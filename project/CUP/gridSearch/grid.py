@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import random
 import time
+import itertools
+import csv
 
 # Genera un seed casuale basato sul tempo corrente
 seed = int(time.time())  # Usa il tempo corrente per creare un seed casuale
@@ -188,10 +190,10 @@ class NeuralNetwork:
                 self.network['b1'] += self.velocities['vb1']
 
                 # Learning rate linear decay
-                self.learning_rate = self.initial_learning_rate * (1 - epoch / epochs)
+                #self.learning_rate = self.initial_learning_rate * (1 - epoch / epochs)
                 #self.learning_rate = max(self.learning_rate, 1e-5)  # Per evitare che diventi troppo piccolo
                 # Learning rate exp decay 
-                #self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
+                # self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
 
             # Calcolo delle loss
             train_loss = self.compute_loss(self.predict(X_train), y_train)
@@ -200,10 +202,7 @@ class NeuralNetwork:
             val_predictions = self.predict(X_val)
             val_loss = self.compute_loss(val_predictions, y_val)
             val_losses.append(val_loss)
-        
-        print(f"\nFinal Train Loss: {train_losses[-1]:.6f}")
-        print(f"Final Validation Loss: {val_losses[-1]:.6f}")
-        self.plot_losses(train_losses, val_losses)
+
         return train_losses, val_losses
 
     def forward_propagation(self, X):
@@ -222,7 +221,7 @@ class NeuralNetwork:
 
     def plot_losses(self, train_losses, val_losses):
         plt.plot(train_losses, label='Train Loss')
-        plt.plot(val_losses, label='Test Loss')
+        plt.plot(val_losses, label='Validation Loss')
         plt.xlabel('Epochs')
         plt.ylabel('MSE Loss')
         plt.legend()
@@ -231,7 +230,7 @@ class NeuralNetwork:
 #----------------------------------------------------------------------------------------------
 
 # Caricamento e preparazione dati
-inputs, targets = load_data('ML-CUP25-TR.csv')
+inputs, targets = load_data('../ML-CUP25-TR.csv')
 
 # Divisione in training e test set
 X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, test_ratio=0.2)
@@ -239,32 +238,73 @@ X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, t
 # Parametri di allenamento
 epochs = 1000
 batch_size = 30
+k = 5
 
+'''
 # Parametri della rete
-hidden_sizes = [50, 50] 
-eta0 = 0.0005
-l2_lambda = 0.00001
-alpha = 0.9
+hidden_sizes = [30, 30] 
+eta0 = 0.001
+l2_lambda = 0.0001
+alpha = 0.5
+'''
 
-# Standardizzazione su TUTTO il training
-X_mean, X_std = X_train_full.mean(axis=0), X_train_full.std(axis=0)
-y_mean, y_std = y_train_full.mean(axis=0), y_train_full.std(axis=0)
-X_train_std = (X_train_full - X_mean) / X_std
-X_test_std = (X_test - X_mean) / X_std
-y_train_std = (y_train_full - y_mean) / y_std
-y_test_std = (y_test - y_mean) / y_std
+# Definizione dei range degli iperparametri per la grid search
+hidden_sizes_list = [[20,20], [30,30], [40,40], [50,50]]
+etas = [0.0001, 0.0005, 0.008, 0.001, 0.003, 0.005, 0.008] 
+lambdas = [0.00001, 0.00006 ,0.0001]
+alphas = [0.5, 0.9, 0.99]
 
-nn = NeuralNetwork(input_size=X_train_std.shape[1],hidden_sizes=hidden_sizes,output_size=y_train_std.shape[1],eta0=eta0,l2_lambda=l2_lambda,alpha=alpha
-    )
-nn.train(X_train_std, y_train_std, X_test_std, y_test_std, epochs, batch_size)
+# Nome del file CSV in cui salvare i risultati
+csv_filename = "MSEgridSearch.csv"
 
-#Predictions on TR-set
-y_pred_tr = nn.predict(X_train_std)
-y_pred_tr_dest = y_pred_tr * y_std + y_mean
-real_tr_loss = nn.compute_loss(y_pred_tr_dest, y_train_full)
-print("Original scale Loss (entire tr-set):", real_tr_loss)
-plot_component_comparison(y_train_full, y_pred_tr_dest, title_prefix="TRAIN")
-plot_error_per_component(y_train_full, y_pred_tr_dest, title="TRAIN Error Distribution")
+# Scrive l'header del file CSV
+with open(csv_filename, mode="w", newline="") as file:
+    writer = csv.writer(file)
+    writer.writerow(["Hidden Sizes", "Learning Rate", "L2 Lambda", "Momentum", "Train Loss", "Validation Loss"])
 
-#Predictions on TEST-set
-y_pred_test = nn.predict(X_test_std) * y_std + y_mean
+# Loop su tutte le combinazioni possibili di iperparametri
+for hidden_sizes, lr, l2_lambda, alpha in itertools.product(hidden_sizes_list, etas, lambdas, alphas):
+    print(f"Training with Hidden Sizes={hidden_sizes}, LR={lr}, L2={l2_lambda}, Momentum={alpha}")
+
+    # Training con k-fold cross-validation
+    train_losses = []
+    val_losses = []
+
+    for fold, (X_tr, y_tr, X_val, y_val) in enumerate(k_fold_split(X_train_full, y_train_full, k=k)):
+        print(f"\nFold {fold+1}/{k}")
+
+        # Standardizzazione sul training fold (input e target)
+        X_mean, X_std = X_tr.mean(axis=0), X_tr.std(axis=0)
+        y_mean, y_std = y_tr.mean(axis=0), y_tr.std(axis=0)
+        X_tr = (X_tr - X_mean) / X_std
+        X_val = (X_val - X_mean) / X_std
+        y_tr = (y_tr - y_mean) / y_std
+        y_val = (y_val - y_mean) / y_std
+
+        nn = NeuralNetwork(
+            input_size=X_tr.shape[1],
+            hidden_sizes=hidden_sizes,
+            output_size=y_tr.shape[1],
+            eta0=lr,
+            l2_lambda=l2_lambda,
+            alpha=alpha
+        )
+
+        train_loss, val_loss = nn.train(X_tr, y_tr, X_val, y_val, epochs, batch_size)
+        train_losses.append(train_loss[-1])
+        val_losses.append(val_loss[-1])
+
+    # Media e dev st delle loss
+    avg_train_loss = np.mean(train_losses)
+    std_train_loss = np.std(train_losses)
+    avg_val_loss = np.mean(val_losses)
+    std_val_loss = np.std(val_losses)
+
+    # Scrive i risultati su file
+    with open(csv_filename, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([hidden_sizes, lr, l2_lambda, alpha, f"{avg_train_loss:.6f}±{std_train_loss:.6f}", f"{avg_val_loss:.6f}±{std_val_loss:.6f}"])
+
+    print(f"Results saved: Train Loss={avg_train_loss:.6f}±{std_train_loss:.6f}, Val Loss={avg_val_loss:.6f}±{std_val_loss:.6f}")
+
+print("Grid search completata! Risultati salvati in:", csv_filename)

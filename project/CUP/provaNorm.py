@@ -42,6 +42,16 @@ def train_test_split(X, y, test_ratio=0.2):
 
     return X[train_idx], y[train_idx], X[test_idx], y[test_idx]
 
+def k_fold_split(X, y, k):
+    indices = np.random.permutation(len(X))
+    folds = np.array_split(indices, k)
+
+    for i in range(k):
+        val_idx = folds[i]
+        train_idx = np.hstack([folds[j] for j in range(k) if j != i])
+
+        yield X[train_idx], y[train_idx], X[val_idx], y[val_idx]
+
 def plot_component_comparison(y_true, y_pred, title_prefix=""):
     num_outputs = y_true.shape[1]
     
@@ -73,18 +83,6 @@ def plot_error_per_component(y_true, y_pred, title="Error per output"):
     plt.title(title)
     plt.grid(True)
     plt.show()
-
-
-def k_fold_split(X, y, k):
-    indices = np.random.permutation(len(X))
-    folds = np.array_split(indices, k)
-
-    for i in range(k):
-        val_idx = folds[i]
-        train_idx = np.hstack([folds[j] for j in range(k) if j != i])
-
-        yield X[train_idx], y[train_idx], X[val_idx], y[val_idx]
-
 
 class NeuralNetwork:
     def __init__(self, input_size, hidden_sizes, output_size, eta0, l2_lambda, alpha):
@@ -188,10 +186,10 @@ class NeuralNetwork:
                 self.network['b1'] += self.velocities['vb1']
 
                 # Learning rate linear decay
-                self.learning_rate = self.initial_learning_rate * (1 - epoch / epochs)
+                #self.learning_rate = self.initial_learning_rate * (1 - epoch / epochs)
                 #self.learning_rate = max(self.learning_rate, 1e-5)  # Per evitare che diventi troppo piccolo
                 # Learning rate exp decay 
-                #self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
+                # self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
 
             # Calcolo delle loss
             train_loss = self.compute_loss(self.predict(X_train), y_train)
@@ -222,7 +220,7 @@ class NeuralNetwork:
 
     def plot_losses(self, train_losses, val_losses):
         plt.plot(train_losses, label='Train Loss')
-        plt.plot(val_losses, label='Test Loss')
+        plt.plot(val_losses, label='Validation Loss')
         plt.xlabel('Epochs')
         plt.ylabel('MSE Loss')
         plt.legend()
@@ -239,32 +237,63 @@ X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, t
 # Parametri di allenamento
 epochs = 1000
 batch_size = 30
+k = 5
 
 # Parametri della rete
-hidden_sizes = [50, 50] 
-eta0 = 0.0005
-l2_lambda = 0.00001
-alpha = 0.9
+hidden_sizes = [30, 30] 
+eta0 = 0.001
+l2_lambda = 0.0001
+alpha = 0.5
 
-# Standardizzazione su TUTTO il training
-X_mean, X_std = X_train_full.mean(axis=0), X_train_full.std(axis=0)
-y_mean, y_std = y_train_full.mean(axis=0), y_train_full.std(axis=0)
-X_train_std = (X_train_full - X_mean) / X_std
-X_test_std = (X_test - X_mean) / X_std
-y_train_std = (y_train_full - y_mean) / y_std
-y_test_std = (y_test - y_mean) / y_std
 
-nn = NeuralNetwork(input_size=X_train_std.shape[1],hidden_sizes=hidden_sizes,output_size=y_train_std.shape[1],eta0=eta0,l2_lambda=l2_lambda,alpha=alpha
+train_losses = []
+val_losses = []
+
+for fold, (X_tr, y_tr, X_val, y_val) in enumerate(k_fold_split(X_train_full, y_train_full, k=k)):
+    print(f"\nFold {fold+1}/{k}")
+
+    # Normalizzazione sul training fold (input e target)
+    X_train_norm, X_min, X_max = normalize_data(X_tr)
+    X_val_norm   = (X_val - X_min) / (X_max - X_min + 1e-8)
+    y_train_norm, y_min, y_max = normalize_data(y_tr)
+    y_val_norm   = (y_val - y_min) / (y_max - y_min + 1e-8)
+
+    nn = NeuralNetwork(
+        input_size=X_train_norm.shape[1],
+        hidden_sizes=hidden_sizes,
+        output_size=y_train_norm.shape[1],
+        eta0=eta0,
+        l2_lambda=l2_lambda,
+        alpha=alpha
     )
-nn.train(X_train_std, y_train_std, X_test_std, y_test_std, epochs, batch_size)
 
-#Predictions on TR-set
-y_pred_tr = nn.predict(X_train_std)
-y_pred_tr_dest = y_pred_tr * y_std + y_mean
-real_tr_loss = nn.compute_loss(y_pred_tr_dest, y_train_full)
+    train_loss, val_loss = nn.train(X_train_norm, y_train_norm, X_val_norm, y_val_norm, epochs, batch_size)
+    train_losses.append(train_loss[-1])
+    val_losses.append(val_loss[-1])
+
+print(f"\nCV Train Loss: {np.mean(train_losses):.6f} ± {np.std(train_losses):.6f}")
+print(f"\nCV Validation Loss: {np.mean(val_losses):.6f} ± {np.std(val_losses):.6f}")
+
+# ----------------------------
+# Predizioni e destandardizzazione
+# ----------------------------
+
+# Normalizzazione su tutto il training
+X_train_norm, X_min, X_max = normalize_data(X_train_full)
+X_val_norm   = (X_val - X_min) / (X_max - X_min + 1e-8)
+X_test_norm   = (X_test - X_min) / (X_max - X_min + 1e-8)
+y_train_norm, y_min, y_max = normalize_data(y_train_full)
+y_val_norm   = (y_val - y_min) / (y_max - y_min + 1e-8)
+y_test_norm   = (y_test - y_min) / (y_max - y_min + 1e-8)
+
+
+# TRAIN
+y_pred_tr = nn.predict(X_train_norm)
+y_pred_tr_den = denormalize_data(y_pred_tr, y_min, y_max)
+real_tr_loss = nn.compute_loss(y_pred_tr_den, y_train_full)
 print("Original scale Loss (entire tr-set):", real_tr_loss)
-plot_component_comparison(y_train_full, y_pred_tr_dest, title_prefix="TRAIN")
-plot_error_per_component(y_train_full, y_pred_tr_dest, title="TRAIN Error Distribution")
+plot_component_comparison(y_train_full, y_pred_tr_den, title_prefix="TRAIN")
+plot_error_per_component(y_train_full, y_pred_tr_den, title="TRAIN Error Distribution")
 
-#Predictions on TEST-set
-y_pred_test = nn.predict(X_test_std) * y_std + y_mean
+# TEST
+y_pred_test_den = denormalize_data(nn.predict(X_test_norm), y_min, y_max)

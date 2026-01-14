@@ -74,16 +74,14 @@ def plot_error_per_component(y_true, y_pred, title="Error per output"):
     plt.grid(True)
     plt.show()
 
-
-def k_fold_split(X, y, k):
+def train_val_split(X, y, val_ratio=0.2):
     indices = np.random.permutation(len(X))
-    folds = np.array_split(indices, k)
+    val_size = int(len(X) * val_ratio)
 
-    for i in range(k):
-        val_idx = folds[i]
-        train_idx = np.hstack([folds[j] for j in range(k) if j != i])
+    val_idx = indices[:val_size]
+    train_idx = indices[val_size:]
 
-        yield X[train_idx], y[train_idx], X[val_idx], y[val_idx]
+    return X[train_idx], y[train_idx], X[val_idx], y[val_idx]
 
 
 class NeuralNetwork:
@@ -188,10 +186,10 @@ class NeuralNetwork:
                 self.network['b1'] += self.velocities['vb1']
 
                 # Learning rate linear decay
-                self.learning_rate = self.initial_learning_rate * (1 - epoch / epochs)
+                #self.learning_rate = self.initial_learning_rate * (1 - epoch / epochs)
                 #self.learning_rate = max(self.learning_rate, 1e-5)  # Per evitare che diventi troppo piccolo
                 # Learning rate exp decay 
-                #self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
+                # self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
 
             # Calcolo delle loss
             train_loss = self.compute_loss(self.predict(X_train), y_train)
@@ -222,7 +220,7 @@ class NeuralNetwork:
 
     def plot_losses(self, train_losses, val_losses):
         plt.plot(train_losses, label='Train Loss')
-        plt.plot(val_losses, label='Test Loss')
+        plt.plot(val_losses, label='Validation Loss')
         plt.xlabel('Epochs')
         plt.ylabel('MSE Loss')
         plt.legend()
@@ -236,17 +234,47 @@ inputs, targets = load_data('ML-CUP25-TR.csv')
 # Divisione in training e test set
 X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, test_ratio=0.2)
 
+# Split train / validation
+X_tr, y_tr, X_val, y_val = train_val_split(X_train_full, y_train_full, val_ratio=0.2)
+
 # Parametri di allenamento
 epochs = 1000
 batch_size = 30
+k = 5
 
 # Parametri della rete
-hidden_sizes = [50, 50] 
-eta0 = 0.0005
-l2_lambda = 0.00001
-alpha = 0.9
+hidden_sizes = [30, 30] 
+eta0 = 0.001
+l2_lambda = 0.0001
+alpha = 0.5
 
-# Standardizzazione su TUTTO il training
+train_losses = []
+val_losses = []
+
+# Standardizzazione sul training set (input e target)
+X_mean, X_std = X_tr.mean(axis=0), X_tr.std(axis=0)
+y_mean, y_std = y_tr.mean(axis=0), y_tr.std(axis=0)
+X_tr = (X_tr - X_mean) / X_std
+X_val = (X_val - X_mean) / X_std
+y_tr = (y_tr - y_mean) / y_std
+y_val = (y_val - y_mean) / y_std
+
+nn = NeuralNetwork(
+    input_size=X_tr.shape[1],
+    hidden_sizes=hidden_sizes,
+    output_size=y_tr.shape[1],
+    eta0=eta0,
+    l2_lambda=l2_lambda,
+    alpha=alpha
+)
+
+train_loss, val_loss = nn.train(X_tr, y_tr, X_val, y_val, epochs, batch_size)
+
+# ----------------------------
+# Predizioni e destandardizzazione
+# ----------------------------
+
+# Standardizzazione su tutto il training
 X_mean, X_std = X_train_full.mean(axis=0), X_train_full.std(axis=0)
 y_mean, y_std = y_train_full.mean(axis=0), y_train_full.std(axis=0)
 X_train_std = (X_train_full - X_mean) / X_std
@@ -254,11 +282,7 @@ X_test_std = (X_test - X_mean) / X_std
 y_train_std = (y_train_full - y_mean) / y_std
 y_test_std = (y_test - y_mean) / y_std
 
-nn = NeuralNetwork(input_size=X_train_std.shape[1],hidden_sizes=hidden_sizes,output_size=y_train_std.shape[1],eta0=eta0,l2_lambda=l2_lambda,alpha=alpha
-    )
-nn.train(X_train_std, y_train_std, X_test_std, y_test_std, epochs, batch_size)
-
-#Predictions on TR-set
+# TRAIN
 y_pred_tr = nn.predict(X_train_std)
 y_pred_tr_dest = y_pred_tr * y_std + y_mean
 real_tr_loss = nn.compute_loss(y_pred_tr_dest, y_train_full)
@@ -266,5 +290,5 @@ print("Original scale Loss (entire tr-set):", real_tr_loss)
 plot_component_comparison(y_train_full, y_pred_tr_dest, title_prefix="TRAIN")
 plot_error_per_component(y_train_full, y_pred_tr_dest, title="TRAIN Error Distribution")
 
-#Predictions on TEST-set
+# TEST
 y_pred_test = nn.predict(X_test_std) * y_std + y_mean
