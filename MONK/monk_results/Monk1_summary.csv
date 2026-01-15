@@ -1,0 +1,2 @@
+dataset,epochs_planned,epochs_run,batch_size,hidden_size,learning_rate,patience,train_accuracy,val_accuracy,test_accuracy,train_loss,val_loss,test_loss
+MONK-1,500,500,16,4,0.5,150,100.0,92.0,95.37037037037037,0.027556535232472982,0.196967419244849,0.11953425975565446
