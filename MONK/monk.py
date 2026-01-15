@@ -134,8 +134,7 @@ learning_rate = 0.5
 nn = NeuralNetwork(input_size=17, hidden_size=hidden_size, output_size=1, learning_rate=learning_rate)
 early_stopping = EarlyStopping(patience=20,min_delta=0.005)
 
-
-# Addestramento
+# Training
 tr_loss = []
 val_loss = []
 tr_accs = []
