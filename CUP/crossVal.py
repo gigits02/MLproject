@@ -17,15 +17,6 @@ def tanh(x):
 def tanh_derivative(x):
     return 1 - np.tanh(x)**2
 
-def normalize_data(X):
-    min_value = X.min(axis=0)
-    max_value = X.max(axis=0)
-    X_norm = (X - min_value) / (max_value - min_value + 10**(-8))  # Evitare divisioni per zero
-    return X_norm, min_value, max_value
-
-def denormalize_data(X_norm, X_min, X_max):
-    return X_norm * (X_max - X_min) + X_min
-
 def load_data(filename):
     data = pd.read_csv(filename, header=None)
     inputs = data.iloc[:, 1:13].values  # 12 colonne centrali come input
@@ -246,7 +237,6 @@ hidden_sizes = [20, 20]
 eta0 = 0.0005
 l2_lambda = 0.0001
 alpha = 0.9
-
 
 train_losses = []
 val_losses = []
