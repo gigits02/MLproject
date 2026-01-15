@@ -17,12 +17,6 @@ def binary_cross_entropy(y_true, y_pred):
     y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
     return - (y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
 
-def binary_cross_entropy_derivative(y_true, y_pred):
-    y_true = np.array(y_true)
-    epsilon = 1e-12
-    y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
-    return (y_pred - y_true) / (y_pred * (1 - y_pred))
-
 def train_val_split(X, y, ratio):
     indices = np.random.permutation(len(X))
     val_size = int(len(X) * ratio)
@@ -89,9 +83,8 @@ class NeuralNetwork:
         outputs = self.forward(batch_inputs)
         
         # Calcolo dell'errore
-        output_errors = binary_cross_entropy_derivative(batch_targets, outputs)
-        output_deltas = output_errors * sigmoid_derivative(outputs)
-        
+        output_deltas = output - batch_targets
+
         # Backpropagation
         hidden_errors = np.dot(output_deltas, self.weights_hidden_output.T)
         hidden_deltas = hidden_errors * sigmoid_derivative(self.hidden_layer)
