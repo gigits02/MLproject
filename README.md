@@ -110,8 +110,6 @@ Pre-processing script that:
 * applies **one-hot encoding** to categorical features;
 * saves the processed datasets into the `Encoded_MonkFiles/` folder.
 
-This script needs to be executed only if the encoded files must be regenerated.
-
 ### 📄 monk.py
 
 Main script for the MONK problem.
