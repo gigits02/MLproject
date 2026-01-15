@@ -149,4 +149,9 @@ python monk.py
 * All neural networks are implemented manually, in full compliance with the exam constraints.
 * The folder organization allows for an easy and transparent inspection of the full workflow.
 
-For additional details, please refer to the inline comments within each script.
+## Authors
+* Luigi Tarasi
+* Matilde Battisti
+For any inquiries, please contact us at:
+* l.tarasi@studenti.unipi.it
+* m.battisti4@studenti.unipi.it
