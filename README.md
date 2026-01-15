@@ -132,9 +132,9 @@ Main functionalities:
 Scripts can be executed directly from the terminal, for example:
 
 ```bash
-python crossVal.py
-python finalTest.py
-python monk.py
+python3 crossVal.py
+python3 finalTest.py
+python3 monk.py
 ```
 
 (from their respective directories).
