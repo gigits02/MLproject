@@ -12,7 +12,7 @@ The entire project is developed in **plain Python**, without relying on high-lev
 ## Folder structure overview
 
 ```text
-ml/
+MLproject/
 ├── CUP/
 │   ├── CUP_datasets/
 │   ├── GridSearch/
