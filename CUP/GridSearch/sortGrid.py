@@ -19,6 +19,6 @@ def sort_csv_by_validation_loss(input_file, output_file):
     print(f"File ordinato salvato in: {output_file}")
 
 # Esempio di utilizzo
-input_file = "./MSEgridSearch.csv" 
-output_file = "./MSEsorted.csv"
+input_file = "./MEEgridSearch.csv" 
+output_file = "./MEEsorted.csv"
 sort_csv_by_validation_loss(input_file, output_file)

@@ -112,8 +112,17 @@ class NeuralNetwork:
             'vb2': np.zeros_like(self.network['b2']),
             'vb3': np.zeros_like(self.network['b3']),
         }
+    
+    def compute_MEEloss(self, predictions, targets):
 
-    def compute_loss(self, predictions, targets):
+        mee_loss = np.mean(np.abs(predictions - targets))
+
+        l2_loss = (self.l2_lambda / 2) * (np.sum(self.network['W1']**2) +
+                                        np.sum(self.network['W2']**2) +
+                                        np.sum(self.network['W3']**2))
+        return mee_loss + l2_loss
+
+    def compute_MSEloss(self, predictions, targets):
 
         mse_loss = np.mean((predictions - targets) ** 2)
         l2_loss = (self.l2_lambda / 2) * (np.sum(self.network['W1']**2) +
@@ -185,11 +194,11 @@ class NeuralNetwork:
                 # self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
 
             # Calcolo delle loss
-            train_loss = self.compute_loss(self.predict(X_train), y_train)
+            train_loss = self.compute_MEEloss(self.predict(X_train), y_train)
             train_losses.append(train_loss)
             
             val_predictions = self.predict(X_val)
-            val_loss = self.compute_loss(val_predictions, y_val)
+            val_loss = self.compute_MEEloss(val_predictions, y_val)
             val_losses.append(val_loss)
         
         print(f"\nFinal Train Loss: {train_losses[-1]:.6f}")
@@ -228,15 +237,15 @@ inputs, targets = load_data('./CUP_datasets/ML-CUP25-TR.csv')
 X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, test_ratio=0.2)
 
 # Parametri di allenamento
-epochs = 1000
+epochs = 8000
 batch_size = 30
 k = 5
 
 # Parametri della rete
-hidden_sizes = [20, 20] 
-eta0 = 0.0005
+hidden_sizes = [30, 30] 
+eta0 = 0.00001
 l2_lambda = 0.0001
-alpha = 0.9
+alpha = 0.95
 
 train_losses = []
 val_losses = []
@@ -283,7 +292,7 @@ y_test_std = (y_test - y_mean) / y_std
 # TRAIN
 y_pred_tr = nn.predict(X_train_std)
 y_pred_tr_dest = y_pred_tr * y_std + y_mean
-real_tr_loss = nn.compute_loss(y_pred_tr_dest, y_train_full)
+real_tr_loss = nn.compute_MEEloss(y_pred_tr_dest, y_train_full)
 print("Original scale Loss (entire tr-set):", real_tr_loss)
 plot_component_comparison(y_train_full, y_pred_tr_dest, title_prefix="TRAIN")
 plot_error_per_component(y_train_full, y_pred_tr_dest, title="TRAIN Error Distribution")

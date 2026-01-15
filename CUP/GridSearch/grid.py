@@ -124,7 +124,16 @@ class NeuralNetwork:
             'vb3': np.zeros_like(self.network['b3']),
         }
 
-    def compute_loss(self, predictions, targets):
+    def compute_MEEloss(self, predictions, targets):
+
+        mee_loss = np.mean(np.abs(predictions - targets))
+
+        l2_loss = (self.l2_lambda / 2) * (np.sum(self.network['W1']**2) +
+                                        np.sum(self.network['W2']**2) +
+                                        np.sum(self.network['W3']**2))
+        return mee_loss + l2_loss
+
+    def compute_MSEloss(self, predictions, targets):
 
         mse_loss = np.mean((predictions - targets) ** 2)
         l2_loss = (self.l2_lambda / 2) * (np.sum(self.network['W1']**2) +
@@ -196,11 +205,11 @@ class NeuralNetwork:
                 # self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
 
             # Calcolo delle loss
-            train_loss = self.compute_loss(self.predict(X_train), y_train)
+            train_loss = self.compute_MEEloss(self.predict(X_train), y_train)
             train_losses.append(train_loss)
             
             val_predictions = self.predict(X_val)
-            val_loss = self.compute_loss(val_predictions, y_val)
+            val_loss = self.compute_MEEloss(val_predictions, y_val)
             val_losses.append(val_loss)
 
         return train_losses, val_losses
@@ -236,7 +245,7 @@ inputs, targets = load_data('../CUP_datasets/ML-CUP25-TR.csv')
 X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, test_ratio=0.2)
 
 # Parametri di allenamento
-epochs = 1000
+epochs = 8000
 batch_size = 30
 k = 5
 
@@ -249,13 +258,13 @@ alpha = 0.5
 '''
 
 # Definizione dei range degli iperparametri per la grid search
-hidden_sizes_list = [[20,20], [30,30], [40,40], [50,50]]
-etas = [0.0001, 0.0005, 0.008, 0.001, 0.003, 0.005, 0.008] 
-lambdas = [0.00001, 0.00006 ,0.0001]
-alphas = [0.5, 0.9, 0.99]
+hidden_sizes_list = [[20,20], [30,30]]
+etas = [0.000008, 0.00001, 0.00003, 0.00005] 
+lambdas = [0.0001, 0.0003 ,0.0005]
+alphas = [0.95, 0.97, 0.99]
 
 # Nome del file CSV in cui salvare i risultati
-csv_filename = "MSEgridSearch.csv"
+csv_filename = "MEEgridSearch.csv"
 
 # Scrive l'header del file CSV
 with open(csv_filename, mode="w", newline="") as file:
