@@ -26,12 +26,12 @@ def load_data(filename):
 # Divisione in training e validation set
 def train_val_split(X, y, ratio):
     indices = np.random.permutation(len(X))
-    test_size = int(len(X) * ratio)
+    val_size = int(len(X) * ratio)
 
-    test_idx = indices[:test_size]
-    train_idx = indices[test_size:]
+    val_idx = indices[:val_size]
+    train_idx = indices[val_size:]
 
-    return X[train_idx], y[train_idx], X[test_idx], y[test_idx]
+    return X[train_idx], y[train_idx], X[val_idx], y[val_idx]
 
 def plot_component_comparison(y_true, y_pred, title_prefix=""):
     num_outputs = y_true.shape[1]
