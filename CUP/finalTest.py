@@ -65,6 +65,35 @@ def plot_error_per_component(y_true, y_pred, title="Error per output"):
     plt.grid(True)
     plt.show()
 
+class EarlyStopping:
+    def __init__(self, patience, min_delta):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.best_loss = np.inf
+        self.counter = 0
+        self.best_weights = None
+        self.should_stop = False
+
+    def step(self, val_loss, current_weights):
+        """
+        Aggiorna lo stato dell'early stopping. 
+        current_weights: dizionario dei pesi correnti della rete.
+        """
+        if val_loss < self.best_loss - self.min_delta:
+            self.best_loss = val_loss
+            self.counter = 0
+            # Salvataggio dei pesi migliori (deep copy)
+            self.best_weights = {k: v.copy() for k, v in current_weights.items()}
+        else:
+            self.counter += 1
+
+        if self.counter >= self.patience:
+            self.should_stop = True
+
+    def restore_best_weights(self, network):
+        if self.best_weights is not None:
+            for key in network.keys():
+                network[key] = self.best_weights[key].copy()
 
 class NeuralNetwork:
     def __init__(self, input_size, hidden_sizes, output_size, eta0, l2_lambda, alpha):
@@ -103,21 +132,13 @@ class NeuralNetwork:
         }
 
     def compute_MEEloss(self, predictions, targets):
-
-        mee_loss = np.mean(np.linalg.norm(predictions - targets, axis=1))
-
+        errors = predictions - targets
+        mee_loss = np.mean(np.linalg.norm(errors, axis=1))  # media sulle righe
+        # regolarizzazione L2
         l2_loss = (self.l2_lambda / 2) * (np.sum(self.network['W1']**2) +
                                         np.sum(self.network['W2']**2) +
                                         np.sum(self.network['W3']**2))
         return mee_loss + l2_loss
-    
-    def compute_MSEloss(self, predictions, targets):
-
-        mse_loss = np.mean((predictions - targets) ** 2)
-        l2_loss = (self.l2_lambda / 2) * (np.sum(self.network['W1']**2) +
-                                          np.sum(self.network['W2']**2) +
-                                          np.sum(self.network['W3']**2))
-        return mse_loss + l2_loss
     
     def train(self, X_train, y_train, X_val, y_val, epochs, batch_size):
         train_losses = []
@@ -139,8 +160,10 @@ class NeuralNetwork:
                 
                 forward_results = self.forward_propagation(X_batch)
                 
-                # Gradiente MSE per l'output
-                dZ3 = 2 * (forward_results['Z3'] - y_batch) / y_batch.shape[0]
+                # Gradiente MEE per l'output
+                errors = forward_results['Z3'] - y_batch
+                norms = np.linalg.norm(errors, axis=1, keepdims=True) + 1e-8
+                dZ3 = errors / norms / y_batch.shape[0]
                 # Backpropagation con regolarizzazione L2
                 dW3 = forward_results['A2'].T @ dZ3 + self.l2_lambda * self.network['W3']
                 dA2 = dZ3 @ self.network['W3'].T
@@ -190,6 +213,18 @@ class NeuralNetwork:
             val_loss = self.compute_MEEloss(val_predictions, y_val)
             val_losses.append(val_loss)
         
+            # Early stopping
+            if early_stopping is not None:
+                early_stopping.step(val_loss, self.network)
+                if early_stopping.should_stop:
+                    print(f"\nEarly stopping at epoch {epoch} "
+                        f"(best val loss = {early_stopping.best_loss:.5f})")
+                    break
+
+        # Ripristina i migliori pesi
+        if early_stopping is not None:
+            early_stopping.restore_best_weights(self.network)
+            
         print(f"\nFinal Train Loss: {train_losses[-1]:.6f}")
         print(f"Final Validation Loss: {val_losses[-1]:.6f}")
         self.plot_losses(train_losses, val_losses)
@@ -223,17 +258,18 @@ class NeuralNetwork:
 inputs, targets = load_data('./CUP_datasets/ML-CUP25-TR.csv')
 
 # Divisione in training e test set
-X_train_full, y_train_full, X_val, y_val = train_val_split(inputs, targets, ratio=0.2)
+X_train_full, y_train_full, X_val, y_val = train_val_split(inputs, targets, ratio=0.25)
 
 # Parametri di allenamento
-epochs = 4000
+epochs = 5000
 batch_size = 30
+k = 5
 
 # Parametri della rete
 hidden_sizes = [20, 20] 
-eta0 = 8e-6
-l2_lambda = 0.0001
-alpha = 0.99
+eta0 = 0.0001
+l2_lambda = 0.00003
+alpha = 0.95
 
 # Standardizzazione su TUTTO il training
 X_mean, X_std = X_train_full.mean(axis=0), X_train_full.std(axis=0)
@@ -244,6 +280,7 @@ y_train_std = (y_train_full - y_mean) / y_std
 y_val_std = (y_val - y_mean) / y_std
 
 nn = NeuralNetwork(input_size=X_train_std.shape[1],hidden_sizes=hidden_sizes,output_size=y_train_std.shape[1],eta0=eta0,l2_lambda=l2_lambda,alpha=alpha)
+early_stopping = EarlyStopping(patience=1000,min_delta=0.0)
 nn.train(X_train_std, y_train_std, X_val_std, y_val_std, epochs, batch_size)
 
 #Predictions on TR-set

@@ -125,21 +125,13 @@ class NeuralNetwork:
         }
 
     def compute_MEEloss(self, predictions, targets):
-
-        mee_loss = np.mean(np.abs(predictions - targets))
-
+        errors = predictions - targets
+        mee_loss = np.mean(np.linalg.norm(errors, axis=1))  # media sulle righe
+        # regolarizzazione L2
         l2_loss = (self.l2_lambda / 2) * (np.sum(self.network['W1']**2) +
                                         np.sum(self.network['W2']**2) +
                                         np.sum(self.network['W3']**2))
         return mee_loss + l2_loss
-
-    def compute_MSEloss(self, predictions, targets):
-
-        mse_loss = np.mean((predictions - targets) ** 2)
-        l2_loss = (self.l2_lambda / 2) * (np.sum(self.network['W1']**2) +
-                                          np.sum(self.network['W2']**2) +
-                                          np.sum(self.network['W3']**2))
-        return mse_loss + l2_loss
     
     def train(self, X_train, y_train, X_val, y_val, epochs, batch_size):
         train_losses = []
@@ -161,8 +153,10 @@ class NeuralNetwork:
                 
                 forward_results = self.forward_propagation(X_batch)
                 
-                # Gradiente MSE per l'output
-                dZ3 = 2 * (forward_results['Z3'] - y_batch) / y_batch.shape[0]
+                # Gradiente MEE per l'output
+                errors = forward_results['Z3'] - y_batch
+                norms = np.linalg.norm(errors, axis=1, keepdims=True) + 1e-8
+                dZ3 = errors / norms / y_batch.shape[0]  
                 # Backpropagation con regolarizzazione L2
                 dW3 = forward_results['A2'].T @ dZ3 + self.l2_lambda * self.network['W3']
                 dA2 = dZ3 @ self.network['W3'].T
@@ -245,23 +239,15 @@ inputs, targets = load_data('../CUP_datasets/ML-CUP25-TR.csv')
 X_train_full, y_train_full, X_test, y_test = train_test_split(inputs, targets, test_ratio=0.2)
 
 # Parametri di allenamento
-epochs = 8000
+epochs = 5000
 batch_size = 30
 k = 5
 
-'''
-# Parametri della rete
-hidden_sizes = [30, 30] 
-eta0 = 0.001
-l2_lambda = 0.0001
-alpha = 0.5
-'''
-
 # Definizione dei range degli iperparametri per la grid search
 hidden_sizes_list = [[20,20], [30,30]]
-etas = [0.000008, 0.00001, 0.00003, 0.00005] 
-lambdas = [0.0001, 0.0003 ,0.0005]
-alphas = [0.95, 0.97, 0.99]
+etas = [0.0001, 0.0002, 0.0003, 0.0004] 
+lambdas = [0.00001, 0.00003 ,0.00005]
+alphas = [0.93, 0.95, 0.97]
 
 # Nome del file CSV in cui salvare i risultati
 csv_filename = "MEEgridSearch.csv"
