@@ -37,12 +37,16 @@ def train_val_split(X, y, ratio):
     return X[train_idx], y[train_idx], X[val_idx], y[val_idx]
 
 def compute_loss(model, X, y):
-    """
-    Calcola la Binary Cross Entropy media sull'intero dataset
-    """
     y = y.reshape(-1, 1)
     outputs = model.forward(X)
-    return np.mean(binary_cross_entropy(y, outputs))
+    bce = np.mean(binary_cross_entropy(y, outputs))
+
+    l2_term = 0.5 * model.lambda_l2 * (
+        np.sum(model.weights_input_hidden**2) +
+        np.sum(model.weights_hidden_output**2)
+    )
+
+    return bce + l2_term
 
 # -------------------------------
 # Early stopping
@@ -79,8 +83,10 @@ class EarlyStopping:
 # -------------------------------
 
 class NeuralNetwork:
-    def __init__(self, input_size, hidden_size, output_size, learning_rate=0.5):
+    def __init__(self, input_size, hidden_size, output_size, learning_rate, lambda_l2):
         self.learning_rate = learning_rate
+        self.lambda_l2 = lambda_l2
+
         self.weights_input_hidden = np.random.uniform(-1, 1, (input_size, hidden_size))
         self.weights_hidden_output = np.random.uniform(-1, 1, (hidden_size, output_size))
 
@@ -99,12 +105,18 @@ class NeuralNetwork:
         hidden_errors = np.dot(output_deltas, self.weights_hidden_output.T)
         hidden_deltas = hidden_errors * sigmoid_derivative(self.hidden_layer)
 
-        self.weights_hidden_output -= (
-            self.learning_rate * np.dot(self.hidden_layer.T, output_deltas) / len(batch_inputs)
-        )
-        self.weights_input_hidden -= (
-            self.learning_rate * np.dot(batch_inputs.T, hidden_deltas) / len(batch_inputs)
-        )
+        # Gradienti standard
+        grad_hidden_output = np.dot(self.hidden_layer.T, output_deltas) / len(batch_inputs)
+        grad_input_hidden = np.dot(batch_inputs.T, hidden_deltas) / len(batch_inputs)
+
+        # 🔹 L2 regularization (weight decay)
+        grad_hidden_output += self.lambda_l2 * self.weights_hidden_output
+        grad_input_hidden += self.lambda_l2 * self.weights_input_hidden
+
+        # Update
+        self.weights_hidden_output -= self.learning_rate * grad_hidden_output
+        self.weights_input_hidden -= self.learning_rate * grad_input_hidden
+
 
     def accuracy(self, dataset):
         correct = 0
@@ -124,12 +136,15 @@ df = pd.read_csv("./encoded_MonkFiles/m3training.csv", header=None)
 inputs = df.iloc[:, 1:].values
 targets = df.iloc[:, 0].values
 
-train_inputs, train_targets, val_inputs, val_targets = train_val_split(
-    inputs, targets, ratio=0.2
-)
+train_inputs, train_targets, val_inputs, val_targets = train_val_split(inputs, targets, ratio=0.2)
 
 train_data = [(train_inputs[i], train_targets[i]) for i in range(len(train_inputs))]
 val_data = [(val_inputs[i], val_targets[i]) for i in range(len(val_inputs))]
+
+df_test = pd.read_csv("./encoded_MonkFiles/m3test.csv", header=None)
+test_inputs = df_test.iloc[:, 1:].values
+test_targets = df_test.iloc[:, 0].values
+test_data = [(test_inputs[i], test_targets[i]) for i in range(len(test_inputs))]
 
 # -------------------------------
 # Hyperparameters
@@ -139,16 +154,16 @@ epochs = 1000
 batch_size = 15
 hidden_size = 4
 learning_rate = 0.1
-
-nn = NeuralNetwork(input_size=17, hidden_size=hidden_size, output_size=1, learning_rate=learning_rate)
+lambda_l2 = 0.005
+nn = NeuralNetwork(input_size=17, hidden_size=hidden_size, output_size=1, learning_rate=learning_rate, lambda_l2=lambda_l2)
 early_stopping = EarlyStopping(patience=20, min_delta=0.005)
 
 # -------------------------------
 # Training
 # -------------------------------
 
-tr_loss, val_loss = [], []
-tr_accs, val_accs = [], []
+tr_loss, val_loss, ts_loss = [], [], []
+tr_accs, val_accs, ts_accs = [], [], []
 
 for epoch in tqdm(range(epochs), desc="Training Progress", unit="epoch"):
 
@@ -160,9 +175,10 @@ for epoch in tqdm(range(epochs), desc="Training Progress", unit="epoch"):
 
     tr_loss.append(compute_loss(nn, train_inputs, train_targets))
     val_loss.append(compute_loss(nn, val_inputs, val_targets))
-
+    ts_loss.append(compute_loss(nn, test_inputs, test_targets))
     tr_accs.append(nn.accuracy(train_data))
     val_accs.append(nn.accuracy(val_data))
+    ts_accs.append(nn.accuracy(test_data))
 
     if epoch > 100:
         early_stopping.step(val_loss[-1], nn)
@@ -179,34 +195,31 @@ early_stopping.restore_best_weights(nn)
 
 print(f"Accuratezza Training: {tr_accs[-1]:.2f}%")
 print(f"Accuratezza Validation: {val_accs[-1]:.2f}%")
+print(f"Accuratezza Test: {ts_accs[-1]:.2f}%")
 
-# -------------------------------
-# Test set
-# -------------------------------
-
-df_test = pd.read_csv("./encoded_MonkFiles/m3test.csv", header=None)
-test_inputs = df_test.iloc[:, 1:].values
-test_targets = df_test.iloc[:, 0].values
-test_data = [(test_inputs[i], test_targets[i]) for i in range(len(test_inputs))]
-
-print(f"Accuratezza Test: {nn.accuracy(test_data):.2f}%")
 
 # -------------------------------
 # Plot
 # -------------------------------
 
 plt.plot(tr_loss, label="Train Loss")
-plt.plot(val_loss, label="Val Loss")
+plt.plot(val_loss, linestyle="--", label="Val Loss")
+plt.plot(ts_loss, linestyle="--", label="Ts Loss")
 plt.xlabel("Epoch")
-plt.ylabel("Binary Cross Entropy")
+plt.ylabel("Binary Cross Entropy (reg.)")
 plt.legend()
-plt.title("Loss over epochs")
+plt.grid(True, linestyle=":", alpha=0.6)
+plt.title("Monk 3 (reg.) - Loss", fontweight="bold")
+plt.tight_layout()
 plt.show()
 
 plt.plot(tr_accs, label="Train Accuracy")
-plt.plot(val_accs, label="Val Accuracy")
+plt.plot(val_accs, linestyle="--", label="Val Accuracy")
+plt.plot(ts_accs, linestyle="--", label="Ts Accuracy")
 plt.xlabel("Epoch")
 plt.ylabel("Accuracy")
 plt.legend()
-plt.title("Accuracy over epochs")
+plt.grid(True, linestyle=":", alpha=0.6)
+plt.title("Monk 3 (reg.) - Accuracy", fontweight="bold")
+plt.tight_layout()
 plt.show()
