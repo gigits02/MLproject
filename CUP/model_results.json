@@ -1,22 +1,22 @@
 {
   "best_parameters": {
     "hidden_layers": [
-      40,
-      30
+      32,
+      16
     ],
-    "learning_rate": 0.001,
-    "momentum": 0.9,
-    "lambda_reg": 1e-05,
+    "learning_rate": 0.0001,
+    "momentum": 0.5,
+    "lambda_reg": 5e-05,
     "activation": "tanh"
   },
-  "batch_size": "32",
-  "cv_best_mee": 21.20972717954649,
-  "internal_test_mse": 51.881855685862156,
-  "internal_test_mee": 12.539903090843648,
+  "batch_size": "64",
+  "cv_best_mee": 24.892435108977203,
+  "internal_test_mse": 181.33621383720163,
+  "internal_test_mee": 24.312534339700818,
   "architecture": [
     12,
-    40,
-    30,
+    32,
+    16,
     4
   ],
   "training_samples": 499,

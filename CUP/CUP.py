@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import json
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 class NeuralNetwork:
     """
@@ -28,26 +29,24 @@ class NeuralNetwork:
         # Initialize weights and biases
         self.weights = []
         self.biases = []
-        self.prev_weight_updates = []
-        self.prev_bias_updates = []
+        self.velocity_w = []
+        self.velocity_b = []
         
         # Xavier/He initialization
         for i in range(len(layer_sizes) - 1):
             if activation == 'relu':
                 # He initialization
-                #w = np.random.randn(layer_sizes[i], layer_sizes[i+1]) * np.sqrt(2.0 / layer_sizes[i])
-                w = np.random.uniform(-0.01, 0.01, size=(layer_sizes[i], layer_sizes[i+1]))
+                w = np.random.randn(layer_sizes[i], layer_sizes[i+1]) * np.sqrt(2.0 / layer_sizes[i])
             else:
-                w = np.random.uniform(-0.01, 0.01, size=(layer_sizes[i], layer_sizes[i+1]))
                 # Xavier initialization
-                #w = np.random.randn(layer_sizes[i], layer_sizes[i+1]) * np.sqrt(1.0 / layer_sizes[i])
+                w = np.random.randn(layer_sizes[i], layer_sizes[i+1]) * np.sqrt(1.0 / layer_sizes[i])
             
             b = np.zeros((1, layer_sizes[i+1]))
             
             self.weights.append(w)
             self.biases.append(b)
-            self.prev_weight_updates.append(np.zeros_like(w))
-            self.prev_bias_updates.append(np.zeros_like(b))
+            self.velocity_w.append(np.zeros_like(w))
+            self.velocity_b.append(np.zeros_like(b))
     
     def _activation_function(self, x):
         """
@@ -98,45 +97,41 @@ class NeuralNetwork:
     
     def backward(self, X, y, activations, nets):
         """
-            Backpropagation with gradient descent + momentum
+            Backpropagation with gradient descent
         """
         m = X.shape[0]
         deltas = [None] * len(self.weights)
         
         # Output layer delta (MSE loss derivative)
-        deltas[-1] = (activations[-1] - y) / m
+        deltas[-1] = (activations[-1] - y)
         
         # Hidden layers deltas
         for i in range(len(self.weights) - 2, -1, -1):
             delta_next = deltas[i + 1] @ self.weights[i + 1].T
             deltas[i] = delta_next * self._activation_derivative(nets[i])
         
-        # Update weights and biases
+        # Compute weight and bias gradients
+        weight_grads = []
+        bias_grads = []
+        
         for i in range(len(self.weights)):
-            # Gradients
-            weight_grad = activations[i].T @ deltas[i]
-            bias_grad = np.sum(deltas[i], axis=0, keepdims=True)
-            
-            # Add L2 regularization to weight gradient
+            weight_grad = (activations[i].T @ deltas[i]) / m
+            bias_grad = np.sum(deltas[i], axis=0, keepdims=True) / m
+
+            # Add L2 regularization
             if self.lambda_reg > 0:
                 weight_grad += (self.lambda_reg / m) * self.weights[i]
             
-            # Weight update with momentum
-            weight_update = -self.lr * weight_grad + self.momentum * self.prev_weight_updates[i]
-            bias_update = -self.lr * bias_grad + self.momentum * self.prev_bias_updates[i]
-            
-            self.weights[i] += weight_update
-            self.biases[i] += bias_update
-            
-            # Store for next iteration
-            self.prev_weight_updates[i] = weight_update
-            self.prev_bias_updates[i] = bias_update
+            weight_grads.append(weight_grad)
+            bias_grads.append(bias_grad)
+        
+        return weight_grads, bias_grads
     
     def train(self, X_train, y_train, X_val=None, y_val=None,
               epochs=1000, batch_size=None,
               early_stopping_patience=50, verbose=False):
         """
-            Train the network
+            Training the network with Nesterov
             Returns: Dictionary with training history
         """
         history = {'train_mse': [], 'val_mse': [], 'train_mee': [], 'val_mee': []}
@@ -156,8 +151,21 @@ class NeuralNetwork:
                 X_batch = X_train[batch_idx]
                 y_batch = y_train[batch_idx]
                 
+                # Compute gradients at lookahead position
                 activations, nets = self.forward(X_batch)
-                self.backward(X_batch, y_batch, activations, nets)
+                weight_grads, bias_grads = self.backward(X_batch, y_batch, activations, nets)
+
+                # Updating weights with Nesterov
+                for i in range(len(self.weights)):
+                    prev_vw = self.velocity_w[i]
+                    prev_vb = self.velocity_b[i]
+
+                    self.velocity_w[i] = self.momentum * self.velocity_w[i] - self.lr * weight_grads[i]
+                    self.velocity_b[i] = self.momentum * self.velocity_b[i] - self.lr * bias_grads[i]
+
+                    self.weights[i] += -self.momentum * prev_vw + (1 + self.momentum) * self.velocity_w[i]
+                    self.biases[i]  += -self.momentum * prev_vb + (1 + self.momentum) * self.velocity_b[i]
+
             
             # Calculate metrics
             train_pred = self.predict(X_train)
@@ -243,7 +251,7 @@ class KFoldCV:
 class GridSearch:
     """Grid Search for hyperparameter tuning"""
     
-    def __init__(self, param_grid, k_folds=5, random_state=42):
+    def __init__(self, param_grid, k_folds=5, random_state=None):
         """
             Args:
             param_grid: Dictionary with parameter names as keys and lists of values
@@ -296,6 +304,12 @@ class GridSearch:
             for fold_idx, (train_idx, val_idx) in enumerate(folds):
                 X_train, X_val = X[train_idx], X[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
+
+                X_mean_fold = X_train.mean(axis=0)
+                X_std_fold = X_train.std(axis=0)
+
+                X_train_norm = (X_train - X_mean_fold)/(X_std_fold + 1e-15)
+                X_val_norm = (X_val - X_mean_fold)/(X_std_fold + 1e-15)
                 
                 # Build layer sizes
                 hidden_layers = params.get('hidden_layers', [20])
@@ -311,7 +325,7 @@ class GridSearch:
                 )
                 
                 history = model.train(
-                    X_train, y_train, X_val, y_val,
+                    X_train_norm, y_train, X_val_norm, y_val,
                     epochs=epochs,
                     batch_size=batch_size,
                     early_stopping_patience=early_stopping,
@@ -355,11 +369,11 @@ class GridSearch:
         best_result = self.results[best_idx]
         
         if verbose:
-            print(f"\n{'='*60}")
+            print(f"\n{'='*30}")
             print(f"Best parameters: {best_result['params']}")
             print(f"Best MEE: {best_result['avg_val_mee']:.6f} (+/- {best_result['std_val_mee']:.6f})")
             print(f"Best MSE: {best_result['avg_val_mse']:.6f} (+/- {best_result['std_val_mse']:.6f})")
-            print(f"{'='*60}")
+            print(f"{'='*30}")
         
         return {
             'best_params': best_result['params'],
@@ -392,7 +406,7 @@ def plot_learning_curves(history, save_path='learning_curves.png'):
     axes[0].set_ylabel('MSE', fontsize=12)
     axes[0].set_title('Mean Squared Error', fontsize=14, fontweight='bold')
     axes[0].legend(fontsize=10)
-    axes[0].grid(True, alpha=0.3)
+    axes[0].grid(True, alpha=0.5)
     
     # MEE plot
     axes[1].plot(epochs, history['train_mee'], 'b-', label='Training MEE', linewidth=2)
@@ -402,13 +416,13 @@ def plot_learning_curves(history, save_path='learning_curves.png'):
     axes[1].set_ylabel('MEE', fontsize=12)
     axes[1].set_title('Mean Euclidean Error', fontsize=14, fontweight='bold')
     axes[1].legend(fontsize=10)
-    axes[1].grid(True, alpha=0.3)
+    axes[1].grid(True, alpha=0.5)
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"Learning curves saved to '{save_path}'")
     plt.close()
-
+    return
 
 def plot_predictions_vs_true(y_true, y_pred, n_targets, save_path='predictions_vs_true.png'):
     """ Plot scatter plots of predictions vs true values for each target """
@@ -433,10 +447,11 @@ def plot_predictions_vs_true(y_true, y_pred, n_targets, save_path='predictions_v
         
         # Calculate MSE for this target
         mse_target = np.mean((y_true[:, i] - y_pred[:, i]) ** 2)
+        mee_target = np.mean(np.sqrt((y_true[:, i] - y_pred[:, i])**2))
         
         ax.set_xlabel('True Values', fontsize=11)
         ax.set_ylabel('Predicted Values', fontsize=11)
-        ax.set_title(f'Target {i+1} (R²={r2:.4f}, MSE={mse_target:.4f})', 
+        ax.set_title(f'Target {i+1} (R²={r2:.4f}, MSE={mse_target:.4f}, MEE={mee_target:.4f})', 
                      fontsize=12, fontweight='bold')
         ax.legend(fontsize=9)
         ax.grid(True, alpha=0.3)
@@ -445,10 +460,14 @@ def plot_predictions_vs_true(y_true, y_pred, n_targets, save_path='predictions_v
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"Prediction plots saved to '{save_path}'")
     plt.close()
+    return
 
 
 
 if __name__ == "__main__":
+    RANDOM_SEED = 27
+    np.random.seed(RANDOM_SEED)
+
     # EXTRACTING ML-CUP DATASETS
     print("Loading and extracting data.")
     
@@ -479,7 +498,6 @@ if __name__ == "__main__":
     print("Splitting training data into development and internal test sets.")
     
     # Split: 80% for development (grid search), 20% for internal test
-    np.random.seed(42)
     n_total = len(X_train_full)
     n_internal_test = int(0.2 * n_total)  # 100 samples for internal test
     
@@ -513,33 +531,29 @@ if __name__ == "__main__":
     print("\n"+"="*30)
     print("Performing Grid Search with K-Fold Cross-Validation.")
     
-    # Defining parameter grid
+    # Defining parameter grid search
+    # Coarse
     param_grid = {
-        'hidden_layers': [[40], [20, 10], [30, 15], [40, 20], [40, 30]],
-        'learning_rate': [1e-3, 0.001, 0.005, 0.01],
-        'momentum': [0.3, 0.5, 0.7, 0.9],
-        'lambda_reg': [0.0, 0.00001, 0.0001, 0.001],
-        'activation': ['tanh', 'relu']
+        'hidden_layers': [[32], [32, 16], [40, 20]],
+        'learning_rate': [1e-6, 1e-5, 1e-4],
+        'momentum': [0.3, 0.4, 0.5],
+        'lambda_reg': [5e-5, 1e-4, 3e-4],
+        'activation': ['tanh']
     }
     
     # Perform grid search on development set
-    grid_search = GridSearch(param_grid, k_folds=5, random_state=42)
+    grid_search = GridSearch(param_grid, k_folds=5, random_state=RANDOM_SEED)
     grid_results = grid_search.fit(
-        X_dev_norm, y_dev,
+        X_dev, y_dev,
         input_size=n_features,
         output_size=n_targets,
-        epochs=1000,
+        epochs=1500,
         batch_size=64,
         early_stopping=50,
         verbose=True
     )
     
     best_params = grid_results['best_params']
-    print("\n" + "="*30)
-    print("GRID SEARCH COMPLETED")
-    print("="*30)
-    print(f"Best parameters found: {best_params}")
-    print(f"Best CV MEE: {grid_results['best_score']:.6f}")
     
     # RETRAIN ON FULL TRAINING SET
     print("\n"+"="*30)
@@ -560,10 +574,10 @@ if __name__ == "__main__":
     print(f"Training on {len(X_train_full_norm)} samples.")
     print("(Using internal test set for validation monitoring only)")
     history = final_model.train(
-        X_train_full_norm, y_train_full,
+        X_dev_norm, y_dev,
         X_val=X_internal_test_norm,
         y_val=y_internal_test,
-        epochs=500,
+        epochs=1500,
         batch_size=64,
         early_stopping_patience=50,
         verbose=True
@@ -594,10 +608,15 @@ if __name__ == "__main__":
     for i in range(n_targets):
         target_mse = np.mean((predictions_internal[:, i] - y_internal_test[:, i]) ** 2)
         print(f"  Target {i+1}: {target_mse:.6f}")
+
+    print("\nPer-target MEE:")
+    for i in range(n_targets):
+        target_mee = np.mean(np.sqrt((predictions_internal[:, i] - y_internal_test[:, i]) ** 2))
+        print(f"  Target {i+1}: {target_mee:.6f}")
     
     # PLOT PREDICTIONS VS TRUE VALUES
     print("\n"+"="*30)
-    print("Plotting predictions vs true values.")
+    print("Plotting predictions vs true values over the retraining.")
     plot_predictions_vs_true(y_internal_test, predictions_internal, n_targets, 
                             save_path='predictions_vs_true.png')
     
@@ -612,22 +631,32 @@ if __name__ == "__main__":
     # SAVING RESULTS
     print("\n"+"="*30)
     print("Saving results:")
-    print(" predictions.csv contains the predictions over the test set")
+    print(" MaGiC_ML-CUP25-TS.csv contains the predictions over the test set")
     print(" model_results.json contains the parameters resulting from the Search Grid")
     
     # Save predictions
+    output_file = 'MaGiC_ML-CUP25-TS.csv'
+
+    # Write header comments
+    with open(output_file, "w") as f:
+        f.write("# Battisti Matilde, Tarasi Luigi\n")
+        f.write("# MaGiC\n")
+        f.write("# ML-CUP25 v1\n")
+        f.write(f"# {datetime.now().strftime('%d/%m/%Y')}\n")
+
     results_df = pd.DataFrame(
         predictions_test,
         columns=[f'target_{i+1}' for i in range(n_targets)]
     )
     results_df.insert(0, 'ID', test_ids)
-    results_df.to_csv('predictions.csv', index=False)
-    print("Predictions saved to 'predictions.csv'")
+
+    results_df.to_csv(output_file, mode='a', index=False, header=False)
+    print(f"Predictions saved to {output_file}")
     
     # Save detailed results
     detailed_results = {
         'best_parameters': best_params,
-        'batch_size': '32',
+        'batch_size': '64',
         'cv_best_mee': float(grid_results['best_score']),
         'internal_test_mse': float(internal_mse),
         'internal_test_mee': float(internal_mee),
@@ -648,4 +677,5 @@ if __name__ == "__main__":
     for i, result in enumerate(sorted_results[:10], 1):
         print(f"\n{i}. MEE: {result['avg_val_mee']:.6f} (+/- {result['std_val_mee']:.6f})")
         print(f"   Params: {result['params']}")
+
     
