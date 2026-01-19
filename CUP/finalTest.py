@@ -144,91 +144,93 @@ class NeuralNetwork:
         train_losses = []
         val_losses = []
         num_samples = X_train.shape[0]
-        
+
         for epoch in tqdm(range(epochs), desc="Training Progress", unit="epoch"):
-            indices = np.arange(num_samples)
-            np.random.shuffle(indices)
+
+            # Shuffle
+            indices = np.random.permutation(num_samples)
             X_train, y_train = X_train[indices], y_train[indices]
-            
+
             for i in range(0, num_samples, batch_size):
                 X_batch = X_train[i:i + batch_size]
                 y_batch = y_train[i:i + batch_size]
-                
-                # Anticipazione del momentum (Nesterov)
+
+                # ========= NESTEROV LOOK-AHEAD =========
                 for key in self.network:
                     self.network[key] += self.alpha * self.velocities['v' + key]
-                
+
+                # ========= FORWARD =========
                 forward_results = self.forward_propagation(X_batch)
-                
-                # Gradiente MEE per l'output
+
+                # ========= BACKPROP (MEE) =========
                 errors = forward_results['Z3'] - y_batch
                 norms = np.linalg.norm(errors, axis=1, keepdims=True) + 1e-8
                 dZ3 = errors / norms / y_batch.shape[0]
-                # Backpropagation con regolarizzazione L2
+
                 dW3 = forward_results['A2'].T @ dZ3 + self.l2_lambda * self.network['W3']
                 dA2 = dZ3 @ self.network['W3'].T
                 dZ2 = dA2 * tanh_derivative(forward_results['Z2'])
+
                 dW2 = forward_results['A1'].T @ dZ2 + self.l2_lambda * self.network['W2']
                 dA1 = dZ2 @ self.network['W2'].T
                 dZ1 = dA1 * tanh_derivative(forward_results['Z1'])
+
                 dW1 = X_batch.T @ dZ1 + self.l2_lambda * self.network['W1']
-                
-                # Gradiente dei bias
+
                 db3 = np.sum(dZ3, axis=0)
                 db2 = np.sum(dZ2, axis=0)
                 db1 = np.sum(dZ1, axis=0)
 
-                # Aggiornamento velocità (momentum di Nesterov)
+                # ========= RIPRISTINO PESI ORIGINALI =========
+                for key in self.network:
+                    self.network[key] -= self.alpha * self.velocities['v' + key]
+
+                # ========= UPDATE VELOCITÀ =========
                 self.velocities['vW3'] = self.alpha * self.velocities['vW3'] - self.learning_rate * dW3
                 self.velocities['vW2'] = self.alpha * self.velocities['vW2'] - self.learning_rate * dW2
                 self.velocities['vW1'] = self.alpha * self.velocities['vW1'] - self.learning_rate * dW1
-                
-                # Aggiornamento pesi
-                self.network['W3'] += self.velocities['vW3']
-                self.network['W2'] += self.velocities['vW2']
-                self.network['W1'] += self.velocities['vW1']
 
-
-                # Aggiornamento velocità bias
                 self.velocities['vb3'] = self.alpha * self.velocities['vb3'] - self.learning_rate * db3
                 self.velocities['vb2'] = self.alpha * self.velocities['vb2'] - self.learning_rate * db2
                 self.velocities['vb1'] = self.alpha * self.velocities['vb1'] - self.learning_rate * db1
 
-                # Aggiornamento bias
+                # ========= UPDATE PESI =========
+                self.network['W3'] += self.velocities['vW3']
+                self.network['W2'] += self.velocities['vW2']
+                self.network['W1'] += self.velocities['vW1']
+
                 self.network['b3'] += self.velocities['vb3']
                 self.network['b2'] += self.velocities['vb2']
                 self.network['b1'] += self.velocities['vb1']
 
-                # Learning rate linear decay
-                self.learning_rate = self.initial_learning_rate * (1 - epoch / epochs)
-                #self.learning_rate = max(self.learning_rate, 1e-5)  # Per evitare che diventi troppo piccolo
-                # Learning rate exp decay 
-                #self.learning_rate = self.initial_learning_rate * (0.99 ** epoch)
+            # ========= LR DECAY  =========
+            self.learning_rate = self.initial_learning_rate * (1 - epoch / epochs)
 
-            # Calcolo delle loss
+            # ========= LOSS =========
             train_loss = self.compute_MEEloss(self.predict(X_train), y_train)
+            val_loss = self.compute_MEEloss(self.predict(X_val), y_val)
+
             train_losses.append(train_loss)
-            
-            val_predictions = self.predict(X_val)
-            val_loss = self.compute_MEEloss(val_predictions, y_val)
             val_losses.append(val_loss)
-        
-            # Early stopping
+
+            # ========= EARLY STOPPING =========
             if early_stopping is not None:
                 early_stopping.step(val_loss, self.network)
                 if early_stopping.should_stop:
                     print(f"\nEarly stopping at epoch {epoch} "
-                        f"(best val loss = {early_stopping.best_loss:.5f})")
+                        f"(best val loss = {early_stopping.best_loss:.6f})")
                     break
 
         # Ripristina i migliori pesi
         if early_stopping is not None:
             early_stopping.restore_best_weights(self.network)
-            
+
         print(f"\nFinal Train Loss: {train_losses[-1]:.6f}")
         print(f"Final Validation Loss: {val_losses[-1]:.6f}")
         self.plot_losses(train_losses, val_losses)
+
         return train_losses, val_losses
+
 
     def forward_propagation(self, X):
         Z1 = X @ self.network['W1'] + self.network['b1']
@@ -268,8 +270,8 @@ k = 5
 # Parametri della rete
 hidden_sizes = [20, 20] 
 eta0 = 0.0001
-l2_lambda = 0.00003
-alpha = 0.95
+l2_lambda = 0.00001
+alpha = 0.99
 
 # Standardizzazione su TUTTO il training
 X_mean, X_std = X_train_full.mean(axis=0), X_train_full.std(axis=0)
@@ -280,7 +282,7 @@ y_train_std = (y_train_full - y_mean) / y_std
 y_val_std = (y_val - y_mean) / y_std
 
 nn = NeuralNetwork(input_size=X_train_std.shape[1],hidden_sizes=hidden_sizes,output_size=y_train_std.shape[1],eta0=eta0,l2_lambda=l2_lambda,alpha=alpha)
-early_stopping = EarlyStopping(patience=1000,min_delta=0.0)
+early_stopping = EarlyStopping(patience=50,min_delta=0.0)
 nn.train(X_train_std, y_train_std, X_val_std, y_val_std, epochs, batch_size)
 
 #Predictions on TR-set
