@@ -1,0 +1,7 @@
+# Ignore images output by your scripts
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff

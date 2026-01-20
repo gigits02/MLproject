@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import matplotlib.pyplot as plt
 from datetime import datetime
+import time
 
 class NeuralNetwork:
     """
@@ -151,22 +152,29 @@ class NeuralNetwork:
                 X_batch = X_train[batch_idx]
                 y_batch = y_train[batch_idx]
                 
+                # Jump to lookahead position
+                for i in range(len(self.weights)):
+                    self.weights[i] += self.momentum * self.velocity_w[i]
+                    self.biases[i] += self.momentum * self.velocity_b[i]
+                
                 # Compute gradients at lookahead position
                 activations, nets = self.forward(X_batch)
                 weight_grads, bias_grads = self.backward(X_batch, y_batch, activations, nets)
-
-                # Updating weights with Nesterov
+                
+                # Jump back and apply velocity update
                 for i in range(len(self.weights)):
-                    prev_vw = self.velocity_w[i]
-                    prev_vb = self.velocity_b[i]
-
+                    # Jump back to original position
+                    self.weights[i] -= self.momentum * self.velocity_w[i]
+                    self.biases[i] -= self.momentum * self.velocity_b[i]
+                    
+                    # Update velocity with gradient from lookahead
                     self.velocity_w[i] = self.momentum * self.velocity_w[i] - self.lr * weight_grads[i]
                     self.velocity_b[i] = self.momentum * self.velocity_b[i] - self.lr * bias_grads[i]
+                    
+                    # Apply new velocity
+                    self.weights[i] += self.velocity_w[i]
+                    self.biases[i] += self.velocity_b[i]
 
-                    self.weights[i] += -self.momentum * prev_vw + (1 + self.momentum) * self.velocity_w[i]
-                    self.biases[i]  += -self.momentum * prev_vb + (1 + self.momentum) * self.velocity_b[i]
-
-            
             # Calculate metrics
             train_pred = self.predict(X_train)
             train_mse = np.mean((train_pred - y_train) ** 2)
@@ -364,7 +372,7 @@ class GridSearch:
             if verbose:
                 print(f"  MSE: {avg_mse:.6f} (+/- {std_mse:.6f}), MEE: {avg_mee:.6f} (+/- {std_mee:.6f})")
         
-        # Find best parameters (based on MEE as suggested)
+        # Find best parameters
         best_idx = np.argmin([r['avg_val_mee'] for r in self.results])
         best_result = self.results[best_idx]
         
@@ -471,9 +479,9 @@ if __name__ == "__main__":
     # EXTRACTING ML-CUP DATASETS
     print("Loading and extracting data.")
     
-    train_data = pd.read_csv('CUP_datasets/ML-CUP25-TR.csv', comment='#')
-    test_data = pd.read_csv('CUP_datasets/ML-CUP25-TS.csv', comment='#')
-    
+    train_data = pd.read_csv('CUP_datasets/ML-CUP25-TR.csv', comment='#', header=None)
+    test_data = pd.read_csv('CUP_datasets/ML-CUP25-TS.csv', comment='#', header=None)
+
     # Extract features and targets from training data
     # Known format: ID, feature1, ..., feature12, target1, ..., target4
     train_ids = train_data.iloc[:, 0].values
@@ -486,12 +494,6 @@ if __name__ == "__main__":
     
     n_features = X_train_full.shape[1]
     n_targets = y_train_full.shape[1]
-    
-    print(f"Training data: {X_train_full.shape[0]} samples, {n_features} features, {n_targets} targets")
-    print(f"Test data: {X_test.shape[0]} samples, {n_features} features")
-    print(f"\nFeature statistics:")
-    print(f"  X_train mean: {X_train_full.mean():.4f}, std: {X_train_full.std():.4f}")
-    print(f"  y_train mean: {y_train_full.mean():.4f}, std: {y_train_full.std():.4f}")
     
     # SPLIT TRAINING DATA
     print("\n"+"="*30)
@@ -531,15 +533,33 @@ if __name__ == "__main__":
     print("\n"+"="*30)
     print("Performing Grid Search with K-Fold Cross-Validation.")
     
+    start_time = time.time()
+
     # Defining parameter grid search
-    # Coarse
+    # Grid for tanh
+    #param_grid = {
+    #    'hidden_layers': [[32], [32, 16], [40, 20]],
+    #    'learning_rate': [1e-6, 1e-5, 1e-4],
+    #    'momentum': [0.3, 0.4, 0.5],
+    #    'lambda_reg': [5e-5, 1e-4, 3e-4],
+    #    'activation': ['tanh']
+    #}
+
+    # Grid for relu
     param_grid = {
-        'hidden_layers': [[32], [32, 16], [40, 20]],
-        'learning_rate': [1e-6, 1e-5, 1e-4],
-        'momentum': [0.3, 0.4, 0.5],
-        'lambda_reg': [5e-5, 1e-4, 3e-4],
-        'activation': ['tanh']
+        'hidden_layers': [[8], [12], [16, 8]],
+        'learning_rate': [1e-5, 3e-5],
+        'momentum': [0.0, 0.1, 0.2],
+        'lambda_reg': [1e-3, 3e-3, 1e-2],
+        'activation': ['relu']
     }
+    #param_grid = {
+    #    'hidden_layers': [[32], [32, 16], [40, 20]],
+    #    'learning_rate': [1e-5, 3e-5, 5e-5],
+    #    'momentum': [0.2, 0.3, 0.4],
+    #    'lambda_reg': [5e-5, 1e-4, 5e-4],
+    #    'activation': ['relu']
+    #}
     
     # Perform grid search on development set
     grid_search = GridSearch(param_grid, k_folds=5, random_state=RANDOM_SEED)
@@ -547,7 +567,7 @@ if __name__ == "__main__":
         X_dev, y_dev,
         input_size=n_features,
         output_size=n_targets,
-        epochs=1500,
+        epochs=1000,
         batch_size=64,
         early_stopping=50,
         verbose=True
@@ -555,9 +575,12 @@ if __name__ == "__main__":
     
     best_params = grid_results['best_params']
     
-    # RETRAIN ON FULL TRAINING SET
+    gs_execution_time = time.time() - start_time
+    print(f"Execution time of the grid search:{gs_execution_time}")
+
+    # RETRAIN WITH HOLDOUT
     print("\n"+"="*30)
-    print("Retraining model on full training set with best parameters.")
+    print("Retraining model on the dev set with best parameters.")
     
     hidden_layers = best_params['hidden_layers']
     layer_sizes = [n_features] + hidden_layers + [n_targets]
@@ -566,27 +589,25 @@ if __name__ == "__main__":
         layer_sizes=layer_sizes,
         learning_rate=best_params['learning_rate'],
         momentum=best_params['momentum'],
-        lambda_reg=best_params['lambda_reg'],
+        lambda_reg=best_params['lambda_reg'],   
         activation=best_params['activation']
     )
     
-    # Train on all 500 training samples with internal test as validation for monitoring
-    print(f"Training on {len(X_train_full_norm)} samples.")
-    print("(Using internal test set for validation monitoring only)")
+    # Train on all 400 dev samples
     history = final_model.train(
         X_dev_norm, y_dev,
-        X_val=X_internal_test_norm,
-        y_val=y_internal_test,
-        epochs=1500,
+        X_val=None,
+        y_val=None,
+        epochs=500,
         batch_size=64,
-        early_stopping_patience=50,
+        early_stopping_patience=30,
         verbose=True
     )
     
     # PLOT LEARNING CURVES
     print("\n"+"="*30)
     print("Plotting learning curves.")
-    plot_learning_curves(history, save_path='learning_curves.png')
+    plot_learning_curves(history, save_path='learning_curves_relu.png')
 
     # EVALUATING BEST MODEL ON INTERNAL TEST SET
     print("\n"+"="*30)
@@ -616,9 +637,9 @@ if __name__ == "__main__":
     
     # PLOT PREDICTIONS VS TRUE VALUES
     print("\n"+"="*30)
-    print("Plotting predictions vs true values over the retraining.")
+    print("Plotting predictions vs true values over the internal test.")
     plot_predictions_vs_true(y_internal_test, predictions_internal, n_targets, 
-                            save_path='predictions_vs_true.png')
+                            save_path='predictions_vs_true_relu.png')
     
     # PREDICT ON FINAL TEST SET
     print("\n"+"="*30)
@@ -635,7 +656,7 @@ if __name__ == "__main__":
     print(" model_results.json contains the parameters resulting from the Search Grid")
     
     # Save predictions
-    output_file = 'MaGiC_ML-CUP25-TS.csv'
+    output_file = 'MaGiC_ML-CUP25-TS_relu.csv'
 
     # Write header comments
     with open(output_file, "w") as f:
@@ -656,7 +677,8 @@ if __name__ == "__main__":
     # Save detailed results
     detailed_results = {
         'best_parameters': best_params,
-        'batch_size': '64',
+        'batch_size': '128',
+        'early_stopping_patience': '80',
         'cv_best_mee': float(grid_results['best_score']),
         'internal_test_mse': float(internal_mse),
         'internal_test_mee': float(internal_mee),
@@ -665,7 +687,7 @@ if __name__ == "__main__":
         'internal_test_samples': len(X_internal_test)
     }
     
-    with open('model_results.json', 'w') as f:
+    with open('model_results_relu.json', 'w') as f:
         json.dump(detailed_results, f, indent=2)
     print("Detailed results saved to 'model_results.json'")
     
