@@ -207,7 +207,7 @@ class NeuralNetwork:
                         print(f"Early stopping at epoch {epoch + 1}")
                     break
             
-            # Learning rate decay
+            # Learning rate decay (step)
             if epoch % 100 == 0 and epoch > 0:
                 self.lr *= 0.90
                 if verbose:

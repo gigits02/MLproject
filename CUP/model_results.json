@@ -1,24 +1,42 @@
 {
   "best_parameters": {
     "hidden_layers": [
-      40,
-      20
+      16,
+      12,
+      8
     ],
-    "learning_rate": 5e-05,
-    "momentum": 0.4,
-    "lambda_reg": 0.0005,
+    "learning_rate": 7e-05,
+    "momentum": 0.2,
+    "lambda_reg": 0.001,
     "activation": "relu"
   },
-  "batch_size": "64",
-  "cv_best_mee": 24.097076101429586,
-  "internal_test_mse": 184.24224855971372,
-  "internal_test_mee": 24.45587198768107,
   "architecture": [
     12,
-    40,
-    20,
+    16,
+    12,
+    8,
     4
   ],
-  "training_samples": 499,
-  "internal_test_samples": 99
+  "batch_size": "64",
+  "early_stopping": "50",
+  "train_best_mse": 187.72636902201864,
+  "train_best_mee": 25.02016101170058,
+  "cv_best_mse": 193.42543655205935,
+  "cv_best_mee": 25.428152835074883,
+  "internal_test_mse": 154.467588708779,
+  "internal_test_mee": 21.86317406034424,
+  "early_stopping_epochs": [
+    1000,
+    1000,
+    201,
+    1000,
+    1000
+  ],
+  "early_stopping_stats": {
+    "mean": 840.2,
+    "median": 1000.0,
+    "std": 319.6,
+    "min": 201,
+    "max": 1000
+  }
 }
